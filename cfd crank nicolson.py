@@ -1,7 +1,7 @@
 import numpy as np
-import pandas as pd
+import matplotlib.pyplot as plt
 
-
+# Thomas algorithm function (as defined above)
 def thomas_algorithm(a, b, c, d):
     """
     Solves a tridiagonal system Ax = d.
@@ -34,60 +34,78 @@ def thomas_algorithm(a, b, c, d):
 
     return x
 
+# Diffusion equation solver
+def solve_diffusion(L, T, N, M, nu, f, a_func, b_func):
+    # Discretization parameters
+    delta_y = L / N
+    delta_t = T / M
+    alpha = nu * delta_t / (2 * delta_y**2)
 
-# Example setup
-U_0 = 40
-nu = 0.000217  # viscosity
-dy = 0.001  # spatial step
-dt = 0.01  # time step
-H = 0.04
-t_final = 1.08
-Ny = int(H/dy+1)  # number of nodes
-Nt = int(t_final/dt + 1)  # number of time_steps
+    # Spatial grid
+    y = np.linspace(0, L, N + 1)
 
-# Tridiagonal matrix coefficients
-alpha = nu * dt / (dy**2)
-c = -alpha  # off-diagonal
-a = 1 + 2 * alpha  # diagonal
-b = -alpha  # off-diagonal (same as c for symmetry)
+    # Initial condition
+    u = f(y)
 
-# Initialize arrays
-a_diag = np.array([a] * (Ny))  # diagonal
-b_sub = np.array([b] * (Ny - 1))  # sub-diagonal
-c_sup = np.array([c] * (Ny - 1))  # super-diagonal
+    # Solution array
+    u_all = np.zeros((M + 1, N + 1))
+    u_all[0, :] = u
 
-a_diag[0] = 1
-a_diag[-1] = 1
-b_sub[-1] = 0
-c_sup[0] = 0
-u = np.zeros(Ny)
-u[0:-1] = 0
-u[-1] = U_0
+    # Define tridiagonal matrix diagonals (length N-1)
+    a = -alpha * np.ones(N - 1)
+    a[0] = 0  # No subdiagonal for first row
+    b = (1 + 2 * alpha) * np.ones(N - 1)
+    c = -alpha * np.ones(N - 1)
+    c[-1] = 0  # No superdiagonal for last row
 
+    # Time-stepping loop
+    for n in range(M):
+        t_next = (n + 1) * delta_t
+        u_new = np.zeros(N + 1)
 
+        # Boundary conditions
+        u_new[0] = a_func(t_next)
+        u_new[-1] = b_func(t_next)
 
+        # Right-hand side for interior points
+        R = (alpha * u[:-2] +
+             (1 - 2 * alpha) * u[1:-1] +
+             alpha * u[2:])
+        R[0] += alpha * u_new[0]   # Boundary contribution
+        R[-1] += alpha * u_new[-1] # Boundary contribution
 
-# Store solutions for all time steps
-u_history = [u.copy()]
+        # Solve using Thomas algorithm
+        u_new[1:-1] = thomas_algorithm(a, b, c, R)
 
-# Time-stepping loop
-for step in range(1,Nt):
-    # Update RHS
-    d = u.copy()  # u^n
-    d[0] = 0  # BC: u_1 = 0
-    d[-1] = U_0  # BC: u_ny = 40
+        # Update solution
+        u = u_new.copy()
+        u_all[n + 1, :] = u
 
-    # Solve for u^{n+1}
-    u = thomas_algorithm(a_diag, b_sub, c_sup, d)
+    return y, u_all
 
-    # Store solution
-    u_history.append(u.copy())
+# Problem parameters
+L = 0.04   # Domain length
+T = 1.08    # Total time
+N = 40    # Spatial steps
+M = 540   # Time steps
+nu = 0.000217  # Diffusivity
 
-# Convert history to array
-u_history = np.array(u_history)
-u_final = u_history.T
+# Initial and boundary conditions
+def f(y):
+    return np.zeros_like(y)  # u(y, 0) = 0
 
-y_coords = np.arange(0, H + dy, dy)[:Ny]
-t_coords = np.arange(0, t_final + dt, dt)[:Nt]
-df = pd.DataFrame(u_final, index=y_coords, columns=t_coords)
-df.to_csv("outputlaasonen.csv", float_format="%.3f")
+def a_func(t):
+    return 0  # u(0, t) = 0
+
+def b_func(t):
+    return 1  # u(L, t) = 40
+
+# Solve and plot
+y, u_all = solve_diffusion(L, T, N, M, nu, f, a_func, b_func)
+plt.plot(y, u_all[-1, :], label=f't = {T}')
+plt.xlabel('y')
+plt.ylabel('u(y, t)')
+plt.title('Diffusion Equation Solution with Thomas Algorithm')
+plt.legend()
+plt.grid(True)
+plt.show()
